@@ -1,0 +1,19 @@
+{
+  "name": "rts-multiplayer-server",
+  "version": "1.0.0",
+  "description": "Multiplayer RTS Game Server - 4 Players (1v1v1v1)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "keywords": ["websocket", "rts", "multiplayer", "game"],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
