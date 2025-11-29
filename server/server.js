@@ -10,8 +10,8 @@ const PORT = process.env.PORT || 3001;
 const TICK_RATE = 30; // 30 Hz
 const TICK_INTERVAL = 1000 / TICK_RATE; // ~33ms
 
-const CANVAS_WIDTH = 1700;
-const CANVAS_HEIGHT = 1000;
+const CANVAS_WIDTH = 1600;
+const CANVAS_HEIGHT = 900;
 
 // Koszty produkcji
 const COSTS = {
@@ -837,6 +837,7 @@ server.listen(PORT, () => {
 ╚════════════════════════════════════════════════════╝
   `);
 });
+
 
 
 
