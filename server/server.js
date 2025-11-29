@@ -10,39 +10,39 @@ const PORT = process.env.PORT || 3001;
 const TICK_RATE = 30; // 30 Hz
 const TICK_INTERVAL = 1000 / TICK_RATE; // ~33ms
 
-const CANVAS_WIDTH = 1600;
-const CANVAS_HEIGHT = 900;
+const CANVAS_WIDTH = 2100;
+const CANVAS_HEIGHT = 1600;
 
 // Koszty produkcji
 const COSTS = {
-  worker: 100,
-  knight: 200,
-  workerUpgrade: 500 // Base cost + (workers * 100)
+  worker: 200,
+  knight: 400,
+  workerUpgrade: 1000 // Base cost + (workers * 100)
 };
 
 // Statystyki jednostek
 const UNIT_STATS = {
   worker: { 
-    speed: 4, 
-    size: 20, 
+    speed: 3, 
+    size: 15, 
     maxGold: 10, 
     miningTime: 60,
-    health: 50,
-    maxHealth: 50
+    health: 40,
+    maxHealth: 40
   },
   workerUpgraded: {
-    speed: 6,           // +50% speed
-    size: 20,
-    maxGold: 20,        // 2x capacity
-    miningTime: 60,
-    health: 100,        // 2x HP
-    maxHealth: 100
+    speed: 5,           // +50% speed
+    size: 15,
+    maxGold: 15,        // 2x capacity
+    miningTime: 50,
+    health: 70,        // 2x HP
+    maxHealth: 70
   },
   knight: { 
-    speed: 4, 
-    size: 20, 
-    health: 100, 
-    damage: 10, 
+    speed: 3, 
+    size: 25, 
+    health: 120, 
+    damage: 30, 
     attackRange: 40, 
     attackSpeed: 30 
   }
@@ -272,8 +272,8 @@ function resetGame() {
 
 // Handle collision (soft push)
 function handleCollisions(unit) {
-  const pushStrength = 0.7;
-  const collisionRadius = 50;
+  const pushStrength = 1;
+  const collisionRadius = 30;
   
   // Check collisions with other units
   Object.values(gameState.units).forEach(other => {
@@ -435,7 +435,7 @@ function handleWorkerUpgrade(clientId) {
   
   const cost = COSTS.workerUpgrade + (workerCount * 100);
   
-  if (player.gold < cost) {
+  if (player.gold <= cost) {
     console.log(`⚠️ ${player.name} nie ma złota na upgrade (${player.gold}/${cost})`);
     return;
   }
@@ -472,7 +472,7 @@ function handleMove(clientId, unitId, x, y) {
   
   if (!unit || !player || unit.teamId !== player.teamId) return;
 
-  const maxMove = 500;
+  const maxMove = 900;
   const dist = distance(unit.x, unit.y, x, y);
   if (dist > maxMove) return;
 
