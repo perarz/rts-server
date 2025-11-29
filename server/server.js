@@ -272,8 +272,8 @@ function resetGame() {
 
 // Handle collision (soft push)
 function handleCollisions(unit) {
-  const pushStrength = 0.7;
-  const collisionRadius = 50;
+  const pushStrength = 1.5;
+  const collisionRadius = 30;
   
   // Check collisions with other units
   Object.values(gameState.units).forEach(other => {
@@ -827,5 +827,6 @@ server.listen(PORT, () => {
 ╚════════════════════════════════════════════════════╝
   `);
 });
+
 
 
