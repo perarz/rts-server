@@ -17,7 +17,7 @@ const CANVAS_HEIGHT = 900;
 const COSTS = {
   worker: 100,
   knight: 200,
-  workerUpgrade: 400 // Base cost + (workers * 100)
+  workerUpgrade: 500 // Base cost + (workers * 100)
 };
 
 // Statystyki jednostek
@@ -272,8 +272,8 @@ function resetGame() {
 
 // Handle collision (soft push)
 function handleCollisions(unit) {
-  const pushStrength = 0.5;
-  const collisionRadius = 25;
+  const pushStrength = 0.7;
+  const collisionRadius = 50;
   
   // Check collisions with other units
   Object.values(gameState.units).forEach(other => {
@@ -472,7 +472,7 @@ function handleMove(clientId, unitId, x, y) {
   
   if (!unit || !player || unit.teamId !== player.teamId) return;
 
-  const maxMove = unit.speed * 15;
+  const maxMove = 500;
   const dist = distance(unit.x, unit.y, x, y);
   if (dist > maxMove) return;
 
