@@ -15,9 +15,12 @@ const CANVAS_HEIGHT = 1600;
 
 // Koszty produkcji
 const COSTS = {
+
   worker: 200,
   knight: 400,
   workerUpgrade: 1000 // Base cost + (workers * 100)
+
+
 };
 
 // Statystyki jednostek
@@ -272,7 +275,10 @@ function resetGame() {
 
 // Handle collision (soft push)
 function handleCollisions(unit) {
+
   const pushStrength = 1;
+
+
   const collisionRadius = 30;
   
   // Check collisions with other units
@@ -472,7 +478,11 @@ function handleMove(clientId, unitId, x, y) {
   
   if (!unit || !player || unit.teamId !== player.teamId) return;
 
+
   const maxMove = 900;
+
+  
+
   const dist = distance(unit.x, unit.y, x, y);
   if (dist > maxMove) return;
 
@@ -827,3 +837,6 @@ server.listen(PORT, () => {
 ╚════════════════════════════════════════════════════╝
   `);
 });
+
+
+
