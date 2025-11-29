@@ -472,7 +472,7 @@ function handleMove(clientId, unitId, x, y) {
   
   if (!unit || !player || unit.teamId !== player.teamId) return;
 
-  const maxMove = 500;
+  const maxMove = 450;
   const dist = distance(unit.x, unit.y, x, y);
   if (dist > maxMove) return;
 
@@ -827,4 +827,5 @@ server.listen(PORT, () => {
 ╚════════════════════════════════════════════════════╝
   `);
 });
+
 
