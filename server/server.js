@@ -17,7 +17,7 @@ const CANVAS_HEIGHT = 900;
 const COSTS = {
   worker: 100,
   knight: 200,
-  workerUpgrade: 500 // Base cost + (workers * 100)
+  workerUpgrade: 600 // Base cost + (workers * 100)
 };
 
 // Statystyki jednostek
@@ -827,3 +827,4 @@ server.listen(PORT, () => {
 ╚════════════════════════════════════════════════════╝
   `);
 });
+
