@@ -18,7 +18,7 @@ const MAX_WORKERS = 25;
 // Koszty produkcji
 const COSTS = {
   worker: 200,
-  knight: 400,
+  knight: 200,
   champion: 1500,
   workerUpgrade: 1000 // Base cost + (workers * 100)
 };
@@ -26,9 +26,9 @@ const COSTS = {
 // Statystyki jednostek
 const UNIT_STATS = {
   worker: { 
-    speed: 3, 
+    speed: 2.5, 
     size: 15, 
-    maxGold: 10, 
+    maxGold: 20, 
     miningTime: 60,
     health: 40,
     maxHealth: 40
@@ -36,7 +36,7 @@ const UNIT_STATS = {
   workerUpgraded: {
     speed: 5,
     size: 15,
-    maxGold: 15,
+    maxGold: 30,
     miningTime: 50,
     health: 70,
     maxHealth: 70
@@ -46,9 +46,9 @@ const UNIT_STATS = {
     size: 25, 
     health: 120, 
     maxHealth: 120,
-    damage: 30, 
-    attackRange: 40, 
-    attackSpeed: 30 
+    damage: 10, 
+    attackRange: 50, 
+    attackSpeed: 10 
   },
   champion: {
     speed: 3,
@@ -63,9 +63,9 @@ const UNIT_STATS = {
     health: 500,
     maxHealth: 500,
     size: 60,
-    damage: 20,
-    attackRange: 200,
-    attackSpeed: 50 // ~1 shot per second
+    damage: 10,
+    attackRange: 250,
+    attackSpeed: 25 // ~1 shot per second
   }
 };
 
@@ -976,5 +976,6 @@ server.listen(PORT, () => {
 ╚════════════════════════════════════════════════════╝
   `);
 });
+
 
 
