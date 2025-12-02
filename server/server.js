@@ -1,6 +1,6 @@
 // ============================================
-// RTS MULTIPLAYER SERVER - 4 PLAYERS (1v1v1v1)
-// UPDATED: Waiting lobby, Worker HP, Upgrade, Collisions
+// RTS MULTIPLAYER SERVER v0.7 BETA
+// 4 Players (1v1v1v1) - Champion, Turrets, Depleting Mines
 // ============================================
 const WebSocket = require('ws');
 const http = require('http');
@@ -10,17 +10,17 @@ const PORT = process.env.PORT || 3001;
 const TICK_RATE = 30; // 30 Hz
 const TICK_INTERVAL = 1000 / TICK_RATE; // ~33ms
 
-const CANVAS_WIDTH = 1600;
-const CANVAS_HEIGHT = 900;
+const CANVAS_WIDTH = 2000;
+const CANVAS_HEIGHT = 1200;
+
+const MAX_WORKERS = 25;
 
 // Koszty produkcji
 const COSTS = {
-
   worker: 200,
   knight: 400,
+  champion: 1500,
   workerUpgrade: 1000 // Base cost + (workers * 100)
-
-
 };
 
 // Statystyki jednostek
@@ -34,43 +34,67 @@ const UNIT_STATS = {
     maxHealth: 40
   },
   workerUpgraded: {
-    speed: 5,           // +50% speed
+    speed: 5,
     size: 15,
-    maxGold: 15,        // 2x capacity
+    maxGold: 15,
     miningTime: 50,
-    health: 70,        // 2x HP
+    health: 70,
     maxHealth: 70
   },
   knight: { 
     speed: 3, 
     size: 25, 
     health: 120, 
+    maxHealth: 120,
     damage: 30, 
     attackRange: 40, 
     attackSpeed: 30 
+  },
+  champion: {
+    speed: 3,
+    size: 30,
+    health: 300,
+    maxHealth: 300,
+    damage: 50,
+    attackRange: 50,
+    attackSpeed: 25
+  },
+  base: {
+    health: 500,
+    maxHealth: 500,
+    size: 60,
+    damage: 40,
+    attackRange: 800,
+    attackSpeed: 30 // ~1 shot per second
   }
 };
 
-// Spawny dla 4 graczy (narożniki)
+// Spawny dla 4 graczy (narożniki na większej mapie)
 const SPAWNS = [
-  { x: 150, y: CANVAS_HEIGHT - 150, color: '#3b82f6' },
-  { x: 150, y: 150, color: '#10b981' },
-  { x: CANVAS_WIDTH - 150, y: 150, color: '#ef4444' },
-  { x: CANVAS_WIDTH - 150, y: CANVAS_HEIGHT - 150, color: '#f59e0b' }
+  { x: 200, y: CANVAS_HEIGHT - 200, color: '#3b82f6' },
+  { x: 200, y: 200, color: '#10b981' },
+  { x: CANVAS_WIDTH - 200, y: 200, color: '#ef4444' },
+  { x: CANVAS_WIDTH - 200, y: CANVAS_HEIGHT - 200, color: '#f59e0b' }
 ];
 
-// 10 kopalni rozmieszczonych symetrycznie
+// 10 kopalni z różnymi wartościami
+// Bliskie: 700💰, Dalsze: 2000💰, Centralna: 10000💰
 const GOLD_MINES = [
-  { x: CANVAS_WIDTH / 2, y: CANVAS_HEIGHT / 2 },
-  { x: CANVAS_WIDTH / 4, y: CANVAS_HEIGHT / 4 },
-  { x: 3 * CANVAS_WIDTH / 4, y: CANVAS_HEIGHT / 4 },
-  { x: CANVAS_WIDTH / 4, y: 3 * CANVAS_HEIGHT / 4 },
-  { x: 3 * CANVAS_WIDTH / 4, y: 3 * CANVAS_HEIGHT / 4 },
-  { x: CANVAS_WIDTH / 2, y: CANVAS_HEIGHT / 4 },
-  { x: CANVAS_WIDTH / 2, y: 3 * CANVAS_HEIGHT / 4 },
-  { x: CANVAS_WIDTH / 4, y: CANVAS_HEIGHT / 2 },
-  { x: 3 * CANVAS_WIDTH / 4, y: CANVAS_HEIGHT / 2 },
-  { x: CANVAS_WIDTH / 2, y: CANVAS_HEIGHT / 6 }
+  // Centralna (środek) - 10000
+  { x: CANVAS_WIDTH / 2, y: CANVAS_HEIGHT / 2, totalGold: 10000, type: 'central' },
+  
+  // Bliskie baz - 700
+  { x: CANVAS_WIDTH / 4, y: CANVAS_HEIGHT / 4, totalGold: 700, type: 'near' },
+  { x: 3 * CANVAS_WIDTH / 4, y: CANVAS_HEIGHT / 4, totalGold: 700, type: 'near' },
+  { x: CANVAS_WIDTH / 4, y: 3 * CANVAS_HEIGHT / 4, totalGold: 700, type: 'near' },
+  { x: 3 * CANVAS_WIDTH / 4, y: 3 * CANVAS_HEIGHT / 4, totalGold: 700, type: 'near' },
+  
+  // Dalsze - 2000
+  { x: CANVAS_WIDTH / 2, y: CANVAS_HEIGHT / 4, totalGold: 2000, type: 'far' },
+  { x: CANVAS_WIDTH / 2, y: 3 * CANVAS_HEIGHT / 4, totalGold: 2000, type: 'far' },
+  { x: CANVAS_WIDTH / 4, y: CANVAS_HEIGHT / 2, totalGold: 2000, type: 'far' },
+  { x: 3 * CANVAS_WIDTH / 4, y: CANVAS_HEIGHT / 2, totalGold: 2000, type: 'far' },
+  { x: CANVAS_WIDTH / 2, y: CANVAS_HEIGHT / 6, totalGold: 2000, type: 'far' }
 ];
 
 // Stan gry
@@ -90,14 +114,18 @@ GOLD_MINES.forEach((mine, idx) => {
     id: `mine-${idx}`,
     x: mine.x,
     y: mine.y,
-    size: 40
+    size: 40,
+    totalGold: mine.totalGold,
+    remainingGold: mine.totalGold,
+    type: mine.type,
+    depleted: false
   });
 });
 
 // WebSocket Server
 const server = http.createServer((req, res) => {
   res.writeHead(200, { 'Content-Type': 'text/plain' });
-  res.end('RTS Multiplayer Server Running\n');
+  res.end('RTS Multiplayer Server v0.7 BETA\n');
 });
 
 const wss = new WebSocket.Server({ server });
@@ -138,9 +166,11 @@ function initPlayer(clientId, teamId, name) {
     teamId,
     x: spawn.x,
     y: spawn.y,
-    size: 60,
-    health: 1000,
-    maxHealth: 1000
+    size: UNIT_STATS.base.size,
+    health: UNIT_STATS.base.health,
+    maxHealth: UNIT_STATS.base.maxHealth,
+    attackCooldown: 0,
+    target: null
   };
 
   const workerId = `${clientId}-worker-0`;
@@ -202,7 +232,6 @@ function checkGameStart() {
 function checkGameOver() {
   const playerCount = Object.keys(gameState.players).length;
   
-  // Nie sprawdzaj game over jeśli gra nie wystartowała
   if (!gameState.gameStarted) return false;
   
   const alivePlayers = Object.entries(gameState.players).filter(([clientId, player]) => {
@@ -219,7 +248,6 @@ function checkGameOver() {
     });
     console.log(`🏆 ZWYCIĘZCA: ${winner.name}`);
     
-    // Reset tylko jeśli było 2+ graczy
     if (playerCount >= 2) {
       setTimeout(resetGame, 5000);
     } else {
@@ -254,6 +282,12 @@ function resetGame() {
   gameState.units = {};
   gameState.buildings = {};
   
+  // Reset kopalni
+  gameState.goldMines.forEach(mine => {
+    mine.remainingGold = mine.totalGold;
+    mine.depleted = false;
+  });
+  
   const connectedClients = Array.from(clients.entries());
   gameState.players = {};
   
@@ -275,10 +309,7 @@ function resetGame() {
 
 // Handle collision (soft push)
 function handleCollisions(unit) {
-
   const pushStrength = 1;
-
-
   const collisionRadius = 30;
   
   // Check collisions with other units
@@ -340,7 +371,6 @@ function findFreeSpotAroundMine(mine, unit) {
     const testX = mine.x + Math.cos(rad) * radius;
     const testY = mine.y + Math.sin(rad) * radius;
     
-    // Check if spot is free
     let isFree = true;
     Object.values(gameState.units).forEach(other => {
       if (other.id !== unit.id && distance(testX, testY, other.x, other.y) < 30) {
@@ -353,7 +383,6 @@ function findFreeSpotAroundMine(mine, unit) {
     }
   }
   
-  // Default to mine position if no free spot
   return { x: mine.x - 21, y: mine.y - 21 };
 }
 
@@ -362,11 +391,28 @@ function handleProduce(clientId, unitType) {
   const player = gameState.players[clientId];
   if (!player) return;
 
+  const base = gameState.buildings[player.baseId];
+  if (!base || base.health <= 0) {
+    console.log(`⚠️ ${player.name} nie może produkować - baza zniszczona`);
+    return;
+  }
+
+  // Check worker limit
+  if (unitType === 'worker') {
+    const workerCount = Object.values(gameState.units).filter(u => 
+      u.type === 'worker' && u.teamId === player.teamId
+    ).length;
+    
+    if (workerCount >= MAX_WORKERS) {
+      console.log(`⚠️ ${player.name} osiągnął limit robotników (${MAX_WORKERS})`);
+      return;
+    }
+  }
+
   const cost = COSTS[unitType];
   if (!cost || player.gold < cost) return;
 
   player.gold -= cost;
-  const base = gameState.buildings[player.baseId];
   const unitId = `${clientId}-${unitType}-${Date.now()}`;
   const offset = unitType === 'worker' ? 70 : -70;
   
@@ -404,10 +450,28 @@ function handleProduce(clientId, unitType) {
       speed: UNIT_STATS.knight.speed,
       size: UNIT_STATS.knight.size,
       health: UNIT_STATS.knight.health,
-      maxHealth: UNIT_STATS.knight.health,
+      maxHealth: UNIT_STATS.knight.maxHealth,
       damage: UNIT_STATS.knight.damage,
       attackRange: UNIT_STATS.knight.attackRange,
-      attackCooldown: 0,
+      attackCooldown: Math.floor(Math.random() * 15), // Random initial cooldown to prevent sync
+      target: null
+    };
+  } else if (unitType === 'champion') {
+    gameState.units[unitId] = {
+      id: unitId,
+      type: 'champion',
+      teamId: player.teamId,
+      x: base.x + offset,
+      y: base.y,
+      targetX: base.x + offset,
+      targetY: base.y,
+      speed: UNIT_STATS.champion.speed,
+      size: UNIT_STATS.champion.size,
+      health: UNIT_STATS.champion.health,
+      maxHealth: UNIT_STATS.champion.maxHealth,
+      damage: UNIT_STATS.champion.damage,
+      attackRange: UNIT_STATS.champion.attackRange,
+      attackCooldown: Math.floor(Math.random() * 15), // Random initial cooldown
       target: null
     };
   }
@@ -441,7 +505,7 @@ function handleWorkerUpgrade(clientId) {
   
   const cost = COSTS.workerUpgrade + (workerCount * 100);
   
-  if (player.gold <= cost) {
+  if (player.gold < cost) {
     console.log(`⚠️ ${player.name} nie ma złota na upgrade (${player.gold}/${cost})`);
     return;
   }
@@ -478,10 +542,7 @@ function handleMove(clientId, unitId, x, y) {
   
   if (!unit || !player || unit.teamId !== player.teamId) return;
 
-
-  const maxMove = 900;
-
-  
+  const maxMove = 1500; // Increased from 900
 
   const dist = distance(unit.x, unit.y, x, y);
   if (dist > maxMove) return;
@@ -503,6 +564,11 @@ function handleMine(clientId, unitId, mineId) {
   
   if (!unit || !player || !mine || unit.teamId !== player.teamId || unit.type !== 'worker') return;
 
+  if (mine.depleted) {
+    console.log(`⚠️ Kopalnia ${mineId} jest wyczerpana`);
+    return;
+  }
+
   unit.state = 'moving_to_mine';
   unit.miningTarget = mineId;
   
@@ -515,7 +581,6 @@ function handleMine(clientId, unitId, mineId) {
 function gameTick() {
   gameState.tick++;
   
-  // Nie aktualizuj logiki jeśli gra nie wystartowała
   if (!gameState.gameStarted) {
     if (gameState.tick % 3 === 0) {
       broadcastSnapshot();
@@ -535,7 +600,6 @@ function gameTick() {
       unit.y += (dy / dist) * unit.speed;
     }
     
-    // Collision handling
     handleCollisions(unit);
 
     // Worker logic
@@ -548,14 +612,36 @@ function gameTick() {
 
       if (unit.state === 'moving_to_mine' && unit.miningTarget) {
         const mine = gameState.goldMines.find(m => m.id === unit.miningTarget);
-        if (mine && distance(unit.x, unit.y, mine.x, mine.y) < 60) {
+        if (mine && !mine.depleted && distance(unit.x, unit.y, mine.x, mine.y) < 60) {
           unit.state = 'mining';
           unit.miningProgress = 0;
         }
       } else if (unit.state === 'mining') {
+        const mine = gameState.goldMines.find(m => m.id === unit.miningTarget);
+        
+        if (!mine || mine.depleted) {
+          unit.state = 'idle';
+          unit.miningTarget = null;
+          return;
+        }
+        
         unit.miningProgress++;
         if (unit.miningProgress >= UNIT_STATS.worker.miningTime) {
-          unit.carryingGold = unit.maxGold;
+          const goldToTake = Math.min(unit.maxGold, mine.remainingGold);
+          unit.carryingGold = goldToTake;
+          mine.remainingGold -= goldToTake;
+          
+          if (mine.remainingGold <= 0) {
+            mine.depleted = true;
+            broadcast({
+              type: 'event',
+              event: 'mine_depleted',
+              mineId: mine.id,
+              mineType: mine.type
+            });
+            console.log(`⛏️ Kopalnia ${mine.id} (${mine.type}) została wyczerpana`);
+          }
+          
           unit.state = 'returning';
           unit.targetX = base.x;
           unit.targetY = base.y;
@@ -567,11 +653,14 @@ function gameTick() {
           
           if (unit.miningTarget) {
             const mine = gameState.goldMines.find(m => m.id === unit.miningTarget);
-            if (mine) {
+            if (mine && !mine.depleted) {
               unit.state = 'moving_to_mine';
               const freeSpot = findFreeSpotAroundMine(mine, unit);
               unit.targetX = freeSpot.x;
               unit.targetY = freeSpot.y;
+            } else {
+              unit.state = 'idle';
+              unit.miningTarget = null;
             }
           } else {
             unit.state = 'idle';
@@ -580,13 +669,13 @@ function gameTick() {
       }
     }
 
-    // Knight logic
-    if (unit.type === 'knight') {
+    // Knight & Champion logic
+    if (unit.type === 'knight' || unit.type === 'champion') {
       if (unit.attackCooldown > 0) {
         unit.attackCooldown--;
       }
 
-      const isMoving = distance(unit.x, unit.y, unit.targetX, unit.targetY) > unit.speed * 1.5;
+      const isMoving = distance(unit.x, unit.y, unit.targetX, unit.targetY) > unit.speed * 2;
       if (isMoving) {
         unit.target = null;
         return;
@@ -595,7 +684,7 @@ function gameTick() {
       let nearestEnemy = null;
       let minDist = Infinity;
 
-      // Target workers AND knights
+      // Target enemy units first
       Object.values(gameState.units).forEach(other => {
         if (other.teamId !== unit.teamId && other.health > 0) {
           const d = distance(unit.x, unit.y, other.x, other.y);
@@ -606,6 +695,7 @@ function gameTick() {
         }
       });
 
+      // Then buildings
       Object.values(gameState.buildings).forEach(building => {
         if (building.teamId !== unit.teamId && building.health > 0) {
           const d = distance(unit.x, unit.y, building.x, building.y);
@@ -620,7 +710,7 @@ function gameTick() {
         unit.target = nearestEnemy.id;
         if (unit.attackCooldown === 0) {
           nearestEnemy.health -= unit.damage;
-          unit.attackCooldown = UNIT_STATS.knight.attackSpeed;
+          unit.attackCooldown = unit.type === 'champion' ? UNIT_STATS.champion.attackSpeed : UNIT_STATS.knight.attackSpeed;
 
           broadcast({
             type: 'event',
@@ -631,7 +721,7 @@ function gameTick() {
           });
 
           if (nearestEnemy.health <= 0) {
-            if (nearestEnemy.type === 'knight' || nearestEnemy.type === 'worker') {
+            if (nearestEnemy.type === 'knight' || nearestEnemy.type === 'champion' || nearestEnemy.type === 'worker') {
               delete gameState.units[nearestEnemy.id];
               broadcast({
                 type: 'event',
@@ -652,13 +742,63 @@ function gameTick() {
             }
           }
         }
-      } else if (nearestEnemy && minDist < 100) {
+      } else if (nearestEnemy && minDist < 150) {
         unit.targetX = nearestEnemy.x;
         unit.targetY = nearestEnemy.y;
         unit.target = nearestEnemy.id;
       } else {
         unit.target = null;
       }
+    }
+  });
+
+  // Base turret logic
+  Object.values(gameState.buildings).forEach(building => {
+    if (building.type !== 'base' || building.health <= 0) return;
+
+    if (building.attackCooldown > 0) {
+      building.attackCooldown--;
+    }
+
+    let nearestKnight = null;
+    let minDist = Infinity;
+
+    // Target only knights and champions
+    Object.values(gameState.units).forEach(unit => {
+      if ((unit.type === 'knight' || unit.type === 'champion') && 
+          unit.teamId !== building.teamId && 
+          unit.health > 0) {
+        const d = distance(building.x, building.y, unit.x, unit.y);
+        if (d < minDist && d <= UNIT_STATS.base.attackRange) {
+          minDist = d;
+          nearestKnight = unit;
+        }
+      }
+    });
+
+    if (nearestKnight && building.attackCooldown === 0) {
+      nearestKnight.health -= UNIT_STATS.base.damage;
+      building.attackCooldown = UNIT_STATS.base.attackSpeed;
+      building.target = nearestKnight.id;
+
+      broadcast({
+        type: 'event',
+        event: 'base_attack',
+        buildingId: building.id,
+        targetId: nearestKnight.id,
+        damage: UNIT_STATS.base.damage
+      });
+
+      if (nearestKnight.health <= 0) {
+        delete gameState.units[nearestKnight.id];
+        broadcast({
+          type: 'event',
+          event: 'unit_died',
+          unitId: nearestKnight.id
+        });
+      }
+    } else if (!nearestKnight) {
+      building.target = null;
     }
   });
 
@@ -801,7 +941,6 @@ wss.on('connection', (ws) => {
 
       broadcastSnapshot();
       
-      // Check if game should stop
       const playerCount = Object.keys(gameState.players).length;
       if (gameState.gameStarted && playerCount < gameState.minPlayersToStart) {
         gameState.gameStarted = false;
@@ -828,17 +967,12 @@ setInterval(gameTick, TICK_INTERVAL);
 server.listen(PORT, () => {
   console.log(`
 ╔════════════════════════════════════════════════════╗
-║  🎮 RTS MULTIPLAYER SERVER v2.0                   ║
+║  🎮 RTS MULTIPLAYER SERVER v0.7 BETA              ║
 ║  Port: ${PORT}                                    ║
 ║  Tick Rate: ${TICK_RATE} Hz (${TICK_INTERVAL.toFixed(1)}ms)              ║
 ║  Max Players: 4 (1v1v1v1)                         ║
-║  Min Players to Start: 2                          ║
-║  Features: Worker Upgrade, Collisions, HP         ║
+║  Map: ${CANVAS_WIDTH}x${CANVAS_HEIGHT}                             ║
+║  Features: Champion, Turrets, Depleting Mines     ║
 ╚════════════════════════════════════════════════════╝
   `);
 });
-
-
-
-
-
