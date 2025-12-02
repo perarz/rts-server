@@ -1,13 +1,13 @@
 {
   "name": "rts-multiplayer-server",
-  "version": "1.0.0",
-  "description": "Multiplayer RTS Game Server - 4 Players (1v1v1v1)",
+  "version": "0.7.0-beta",
+  "description": "RTS Multiplayer Server v0.7 BETA - 4 Players (1v1v1v1) with Champion, Turrets, Depleting Mines",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js"
   },
-  "keywords": ["websocket", "rts", "multiplayer", "game"],
+  "keywords": ["websocket", "rts", "multiplayer", "game", "champion", "turret"],
   "author": "",
   "license": "MIT",
   "dependencies": {
