@@ -64,8 +64,8 @@ const UNIT_STATS = {
     maxHealth: 500,
     size: 60,
     damage: 40,
-    attackRange: 800,
-    attackSpeed: 30 // ~1 shot per second
+    attackRange: 400,
+    attackSpeed: 40 // ~1 shot per second
   }
 };
 
@@ -976,3 +976,4 @@ server.listen(PORT, () => {
 ╚════════════════════════════════════════════════════╝
   `);
 });
+
