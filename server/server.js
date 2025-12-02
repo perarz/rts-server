@@ -10,7 +10,7 @@ const PORT = process.env.PORT || 3001;
 const TICK_RATE = 30; // 30 Hz
 const TICK_INTERVAL = 1000 / TICK_RATE; // ~33ms
 
-const CANVAS_WIDTH = 2000;
+const CANVAS_WIDTH = 2300;
 const CANVAS_HEIGHT = 1200;
 
 const MAX_WORKERS = 25;
@@ -976,6 +976,7 @@ server.listen(PORT, () => {
 ╚════════════════════════════════════════════════════╝
   `);
 });
+
 
 
 
