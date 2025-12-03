@@ -10,7 +10,7 @@ const PORT = process.env.PORT || 3001;
 const TICK_RATE = 30; // 30 Hz
 const TICK_INTERVAL = 1000 / TICK_RATE; // ~33ms
 
-const CANVAS_WIDTH = 2300;
+const CANVAS_WIDTH = 2000;
 const CANVAS_HEIGHT = 1200;
 
 const MAX_WORKERS = 25;
@@ -18,17 +18,18 @@ const MAX_WORKERS = 25;
 // Koszty produkcji
 const COSTS = {
   worker: 200,
-  knight: 200,
+  knight: 400,
   champion: 1500,
-  workerUpgrade: 1000 // Base cost + (workers * 100)
+  workerUpgrade: 1000, // Base cost + (workers * 100)
+  baseUpgrade: 1000
 };
 
 // Statystyki jednostek
 const UNIT_STATS = {
   worker: { 
-    speed: 2.5, 
+    speed: 3, 
     size: 15, 
-    maxGold: 20, 
+    maxGold: 10, 
     miningTime: 60,
     health: 40,
     maxHealth: 40
@@ -36,7 +37,7 @@ const UNIT_STATS = {
   workerUpgraded: {
     speed: 5,
     size: 15,
-    maxGold: 30,
+    maxGold: 15,
     miningTime: 50,
     health: 70,
     maxHealth: 70
@@ -46,9 +47,9 @@ const UNIT_STATS = {
     size: 25, 
     health: 120, 
     maxHealth: 120,
-    damage: 10, 
-    attackRange: 50, 
-    attackSpeed: 10 
+    damage: 30, 
+    attackRange: 40, 
+    attackSpeed: 30 
   },
   champion: {
     speed: 3,
@@ -63,9 +64,21 @@ const UNIT_STATS = {
     health: 500,
     maxHealth: 500,
     size: 60,
-    damage: 10,
-    attackRange: 250,
-    attackSpeed: 25 // ~1 shot per second
+    damage: 40,
+    attackRange: 800,
+    attackSpeed: 30, // ~1 shot per second
+    passiveIncome: 50,
+    passiveInterval: 900 // 30 seconds at 30 ticks/sec
+  },
+  baseUpgraded: {
+    health: 1000,
+    maxHealth: 1000,
+    size: 60,
+    damage: 50,
+    attackRange: 1200,
+    attackSpeed: 30,
+    passiveIncome: 100,
+    passiveInterval: 900
   }
 };
 
@@ -169,8 +182,13 @@ function initPlayer(clientId, teamId, name) {
     size: UNIT_STATS.base.size,
     health: UNIT_STATS.base.health,
     maxHealth: UNIT_STATS.base.maxHealth,
+    damage: UNIT_STATS.base.damage,
+    attackRange: UNIT_STATS.base.attackRange,
     attackCooldown: 0,
-    target: null
+    target: null,
+    passiveIncome: UNIT_STATS.base.passiveIncome,
+    passiveTimer: 0,
+    upgraded: false
   };
 
   const workerId = `${clientId}-worker-0`;
@@ -535,6 +553,50 @@ function handleWorkerUpgrade(clientId) {
   console.log(`⚡ ${player.name} kupił upgrade robotników za ${cost} złota`);
 }
 
+// Handle base upgrade
+function handleBaseUpgrade(clientId) {
+  const player = gameState.players[clientId];
+  if (!player) return;
+  
+  const base = gameState.buildings[player.baseId];
+  if (!base || base.health <= 0) {
+    console.log(`⚠️ ${player.name} nie może upgrade'ować - baza zniszczona`);
+    return;
+  }
+  
+  if (base.upgraded) {
+    console.log(`⚠️ ${player.name} już ma upgrade bazy`);
+    return;
+  }
+  
+  const cost = COSTS.baseUpgrade;
+  
+  if (player.gold < cost) {
+    console.log(`⚠️ ${player.name} nie ma złota na upgrade bazy (${player.gold}/${cost})`);
+    return;
+  }
+  
+  player.gold -= cost;
+  base.upgraded = true;
+  
+  // Apply upgraded stats
+  const upgradedStats = UNIT_STATS.baseUpgraded;
+  base.maxHealth = upgradedStats.maxHealth;
+  base.health = upgradedStats.maxHealth; // Full heal
+  base.damage = upgradedStats.damage;
+  base.attackRange = upgradedStats.attackRange;
+  base.passiveIncome = upgradedStats.passiveIncome;
+  
+  broadcast({
+    type: 'event',
+    event: 'base_upgraded',
+    teamId: player.teamId,
+    playerName: player.name
+  });
+  
+  console.log(`🏰 ${player.name} kupił upgrade bazy za ${cost} złota`);
+}
+
 // Handle move
 function handleMove(clientId, unitId, x, y) {
   const unit = gameState.units[unitId];
@@ -588,6 +650,21 @@ function gameTick() {
     return;
   }
 
+  // Passive income from bases
+  Object.values(gameState.buildings).forEach(building => {
+    if (building.type !== 'base' || building.health <= 0) return;
+    
+    building.passiveTimer++;
+    if (building.passiveTimer >= UNIT_STATS.base.passiveInterval) {
+      building.passiveTimer = 0;
+      const player = Object.values(gameState.players).find(p => p.baseId === building.id);
+      if (player) {
+        player.gold += building.passiveIncome;
+        console.log(`💰 ${player.name} otrzymał ${building.passiveIncome}💰 z bazy`);
+      }
+    }
+  });
+
   // Update units
   Object.values(gameState.units).forEach(unit => {
     // Movement
@@ -609,6 +686,14 @@ function gameTick() {
 
       const base = gameState.buildings[player.baseId];
       if (!base) return;
+
+      // AUTO-DEPOSIT: If worker has gold and is within 100px of base
+      if (unit.carryingGold > 0 && distance(unit.x, unit.y, base.x, base.y) < 100) {
+        player.gold += unit.carryingGold;
+        unit.carryingGold = 0;
+        unit.state = 'idle';
+        unit.miningTarget = null;
+      }
 
       if (unit.state === 'moving_to_mine' && unit.miningTarget) {
         const mine = gameState.goldMines.find(m => m.id === unit.miningTarget);
@@ -647,44 +732,24 @@ function gameTick() {
           unit.targetY = base.y;
         }
       } else if (unit.state === 'returning') {
-        if (distance(unit.x, unit.y, base.x, base.y) < 50) {
-          player.gold += unit.carryingGold;
-          unit.carryingGold = 0;
-          
-          if (unit.miningTarget) {
-            const mine = gameState.goldMines.find(m => m.id === unit.miningTarget);
-            if (mine && !mine.depleted) {
-              unit.state = 'moving_to_mine';
-              const freeSpot = findFreeSpotAroundMine(mine, unit);
-              unit.targetX = freeSpot.x;
-              unit.targetY = freeSpot.y;
-            } else {
-              unit.state = 'idle';
-              unit.miningTarget = null;
-            }
-          } else {
-            unit.state = 'idle';
-          }
+        // Still handled by auto-deposit above
+        if (unit.carryingGold === 0) {
+          unit.state = 'idle';
         }
       }
     }
 
-    // Knight & Champion logic
+    // Knight & Champion logic - IMPROVED
     if (unit.type === 'knight' || unit.type === 'champion') {
       if (unit.attackCooldown > 0) {
         unit.attackCooldown--;
       }
 
-      const isMoving = distance(unit.x, unit.y, unit.targetX, unit.targetY) > unit.speed * 2;
-      if (isMoving) {
-        unit.target = null;
-        return;
-      }
-
+      // Find nearest enemy
       let nearestEnemy = null;
       let minDist = Infinity;
 
-      // Target enemy units first
+      // Search for enemies (units first, then buildings)
       Object.values(gameState.units).forEach(other => {
         if (other.teamId !== unit.teamId && other.health > 0) {
           const d = distance(unit.x, unit.y, other.x, other.y);
@@ -695,7 +760,6 @@ function gameTick() {
         }
       });
 
-      // Then buildings
       Object.values(gameState.buildings).forEach(building => {
         if (building.teamId !== unit.teamId && building.health > 0) {
           const d = distance(unit.x, unit.y, building.x, building.y);
@@ -706,8 +770,17 @@ function gameTick() {
         }
       });
 
-      if (nearestEnemy && minDist <= unit.attackRange) {
+      // AGGRO RADIUS - chase enemies within 200px
+      const aggroRadius = 200;
+      const inAggroRange = nearestEnemy && minDist <= aggroRadius;
+      const inAttackRange = nearestEnemy && minDist <= unit.attackRange;
+
+      if (inAttackRange) {
+        // Stop and attack
         unit.target = nearestEnemy.id;
+        unit.targetX = unit.x;
+        unit.targetY = unit.y;
+        
         if (unit.attackCooldown === 0) {
           nearestEnemy.health -= unit.damage;
           unit.attackCooldown = unit.type === 'champion' ? UNIT_STATS.champion.attackSpeed : UNIT_STATS.knight.attackSpeed;
@@ -742,11 +815,16 @@ function gameTick() {
             }
           }
         }
-      } else if (nearestEnemy && minDist < 150) {
-        unit.targetX = nearestEnemy.x;
-        unit.targetY = nearestEnemy.y;
-        unit.target = nearestEnemy.id;
+      } else if (inAggroRange) {
+        // Chase enemy
+        const isMovingToTarget = distance(unit.targetX, unit.targetY, nearestEnemy.x, nearestEnemy.y) < 50;
+        if (!isMovingToTarget) {
+          unit.targetX = nearestEnemy.x;
+          unit.targetY = nearestEnemy.y;
+          unit.target = nearestEnemy.id;
+        }
       } else {
+        // No enemy nearby - clear target
         unit.target = null;
       }
     }
@@ -769,7 +847,7 @@ function gameTick() {
           unit.teamId !== building.teamId && 
           unit.health > 0) {
         const d = distance(building.x, building.y, unit.x, unit.y);
-        if (d < minDist && d <= UNIT_STATS.base.attackRange) {
+        if (d < minDist && d <= building.attackRange) {
           minDist = d;
           nearestKnight = unit;
         }
@@ -777,7 +855,7 @@ function gameTick() {
     });
 
     if (nearestKnight && building.attackCooldown === 0) {
-      nearestKnight.health -= UNIT_STATS.base.damage;
+      nearestKnight.health -= building.damage;
       building.attackCooldown = UNIT_STATS.base.attackSpeed;
       building.target = nearestKnight.id;
 
@@ -786,7 +864,7 @@ function gameTick() {
         event: 'base_attack',
         buildingId: building.id,
         targetId: nearestKnight.id,
-        damage: UNIT_STATS.base.damage
+        damage: building.damage
       });
 
       if (nearestKnight.health <= 0) {
@@ -898,6 +976,9 @@ wss.on('connection', (ws) => {
             case 'upgrade_workers':
               handleWorkerUpgrade(clientData.clientId);
               break;
+            case 'upgrade_base':
+              handleBaseUpgrade(clientData.clientId);
+              break;
           }
           break;
         }
@@ -916,20 +997,27 @@ wss.on('connection', (ws) => {
     if (clientData) {
       console.log(`👋 Gracz ${clientData.name} (Team ${clientData.teamId + 1}) rozłączył się`);
       
+      const player = gameState.players[clientData.clientId];
+      
+      if (player && gameState.gameStarted) {
+        // DESTROY BASE - set to 0 HP (becomes ruins)
+        const base = gameState.buildings[player.baseId];
+        if (base) {
+          base.health = 0;
+          console.log(`💀 Baza gracza ${clientData.name} zniszczona (opuścił grę)`);
+        }
+        
+        // DELETE ALL UNITS
+        Object.keys(gameState.units).forEach(unitId => {
+          if (gameState.units[unitId].teamId === player.teamId) {
+            delete gameState.units[unitId];
+          }
+        });
+        
+        console.log(`🗑️ Usunięto jednostki gracza ${clientData.name}`);
+      }
+      
       delete gameState.players[clientData.clientId];
-      
-      Object.keys(gameState.units).forEach(unitId => {
-        if (unitId.startsWith(clientData.clientId)) {
-          delete gameState.units[unitId];
-        }
-      });
-      
-      Object.keys(gameState.buildings).forEach(buildingId => {
-        if (buildingId.includes(clientData.clientId)) {
-          delete gameState.buildings[buildingId];
-        }
-      });
-
       clients.delete(ws);
 
       broadcast({
@@ -967,16 +1055,12 @@ setInterval(gameTick, TICK_INTERVAL);
 server.listen(PORT, () => {
   console.log(`
 ╔════════════════════════════════════════════════════╗
-║  🎮 RTS MULTIPLAYER SERVER v0.7 BETA              ║
+║  🎮 RTS MULTIPLAYER SERVER v0.8 BETA              ║
 ║  Port: ${PORT}                                    ║
 ║  Tick Rate: ${TICK_RATE} Hz (${TICK_INTERVAL.toFixed(1)}ms)              ║
 ║  Max Players: 4 (1v1v1v1)                         ║
 ║  Map: ${CANVAS_WIDTH}x${CANVAS_HEIGHT}                             ║
-║  Features: Champion, Turrets, Depleting Mines     ║
+║  NEW: Box Selection, Passive Income, Upgrades     ║
 ╚════════════════════════════════════════════════════╝
   `);
 });
-
-
-
-
