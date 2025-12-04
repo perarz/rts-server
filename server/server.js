@@ -7,7 +7,7 @@ const TICK_INTERVAL = 1000 / TICK_RATE;
 
 const CANVAS_WIDTH = 2000;
 const CANVAS_HEIGHT = 1200;
-const MAX_WORKERS = 25;
+const MAX_WORKERS = 30;
 
 const COSTS = {
   worker: 200,
@@ -56,21 +56,21 @@ const UNIT_STATS = {
     health: 500,
     maxHealth: 500,
     size: 60,
-    damage: 40,
-    attackRange: 600,
-    attackSpeed: 30,
+    damage: 30,
+    attackRange: 300,
+    attackSpeed: 40,
     passiveIncome: 50,
-    passiveInterval: 900
+    passiveInterval: 700
   },
   baseUpgraded: {
     health: 1000,
     maxHealth: 1000,
     size: 60,
-    damage: 50,
-    attackRange: 900,
+    damage: 40,
+    attackRange: 500,
     attackSpeed: 30,
     passiveIncome: 100,
-    passiveInterval: 900
+    passiveInterval: 700
   }
 };
 
@@ -1020,3 +1020,4 @@ server.listen(PORT, () => {
 ╚════════════════════════════════════════════════════╝
   `);
 });
+
